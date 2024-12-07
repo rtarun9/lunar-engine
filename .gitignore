@@ -1,6 +1,0 @@
-build/
-.vs/
-out/
-cmake-build-debug/
-*.cso
-CMakeSettings.json

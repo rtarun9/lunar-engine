@@ -22,5 +22,11 @@ FetchContent_Declare(SDL2
 	GIT_PROGRESS TRUE
 )
 
-FetchContent_MakeAvailable(SDL2)
-target_link_libraries(lunar-engine PRIVATE SDL2::SDL2)
+FetchContent_Declare(vk_bootstrap
+	GIT_REPOSITORY https://github.com/charles-lunarg/vk-bootstrap
+	GIT_TAG        v1.3.302
+)
+
+FetchContent_MakeAvailable(SDL2 vk_bootstrap)
+
+target_link_libraries(lunar-engine PRIVATE SDL2::SDL2 vk-bootstrap::vk-bootstrap)

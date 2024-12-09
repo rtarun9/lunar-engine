@@ -232,10 +232,10 @@ int main(int argc, char *argv[])
 
             VkImageSubresourceRange subresource_range = {};
             subresource_range.aspectMask = VkImageAspectFlagBits::VK_IMAGE_ASPECT_COLOR_BIT;
-            subresource_range.baseMipLevel = 1;
-            subresource_range.levelCount = 1;
-            subresource_range.baseArrayLayer = 1;
-            subresource_range.layerCount = 1;
+            subresource_range.baseMipLevel = 0;
+            subresource_range.levelCount = VK_REMAINING_MIP_LEVELS;
+            subresource_range.baseArrayLayer = 0;
+            subresource_range.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
             // Transition the swapchain image into a layout where we can draw into it.
             {
@@ -290,6 +290,51 @@ int main(int argc, char *argv[])
             }
 
             VK_CHECK(vkEndCommandBuffer(cmd));
+
+            // Now the commands we want to execute and recorded in the command buffer. Time to submit the command buffer
+            // to the queue.
+            VkCommandBufferSubmitInfo cmd_submit_info = {};
+            cmd_submit_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+            cmd_submit_info.deviceMask = 0;
+            cmd_submit_info.commandBuffer = cmd;
+
+            // Fill the semaphore wait and signal info.
+            // Wait until swapchain image has been acquired, and signal the render semaphore so that only once rendering
+            // is complete, presentation can be done.
+            VkSemaphoreSubmitInfo swapchain_semaphore_submit_info = {};
+            swapchain_semaphore_submit_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+            swapchain_semaphore_submit_info.semaphore = current_frame_data->swapchain_semaphore;
+            swapchain_semaphore_submit_info.deviceIndex = 0;
+            swapchain_semaphore_submit_info.value = 1;
+            swapchain_semaphore_submit_info.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+            VkSemaphoreSubmitInfo render_semaphore_submit_info = {};
+            render_semaphore_submit_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+            render_semaphore_submit_info.semaphore = current_frame_data->render_semaphore;
+            render_semaphore_submit_info.deviceIndex = 0;
+            render_semaphore_submit_info.value = 1;
+            render_semaphore_submit_info.stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+
+            VkSubmitInfo2 submit_info = {};
+            submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+            submit_info.waitSemaphoreInfoCount = 1;
+            submit_info.pWaitSemaphoreInfos = &swapchain_semaphore_submit_info;
+            submit_info.signalSemaphoreInfoCount = 1;
+            submit_info.pSignalSemaphoreInfos = &render_semaphore_submit_info;
+            submit_info.commandBufferInfoCount = 1;
+            submit_info.pCommandBufferInfos = &cmd_submit_info;
+
+            VK_CHECK(vkQueueSubmit2(graphics_queue, 1, &submit_info, current_frame_data->render_fence));
+
+            VkPresentInfoKHR present_info = {};
+            present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+            present_info.swapchainCount = 1;
+            present_info.pSwapchains = &swapchain;
+            present_info.pWaitSemaphores = &(current_frame_data->render_semaphore);
+            present_info.waitSemaphoreCount = 1;
+            present_info.pImageIndices = &swapchain_image_index;
+
+            VK_CHECK(vkQueuePresentKHR(graphics_queue, &present_info));
         }
         ++frame_number;
     }

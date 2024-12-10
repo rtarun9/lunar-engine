@@ -1,20 +1,6 @@
-#include <stdint.h>
-#include <stdio.h>
+#include "common.h"
 
 #include <vector>
-
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-
-typedef int8_t i8;
-typedef int16_t i16;
-typedef int32_t i32;
-typedef int64_t i64;
-
-typedef float f32;
-typedef double f64;
 
 // Use this #define so SDL_main doesn't need to be used.
 #define SDL_MAIN_HANDLED
@@ -24,12 +10,11 @@ typedef double f64;
 
 #include <VkBootstrap.h>
 
-#define VK_CHECK(x)                                                                                                    \
-    if (VkResult(x) != VK_SUCCESS)                                                                                     \
-    {                                                                                                                  \
-        int *ptr = NULL;                                                                                               \
-        *ptr = 0;                                                                                                      \
-    }
+#include "dynamic_array.h"
+
+#define VK_CHECK(x) ASSERT((VkResult)x == VK_SUCCESS)
+
+#define FRAME_OVERLAP (u32)2
 
 struct frame_data_t
 {
@@ -46,8 +31,6 @@ struct frame_data_t
     // completed).
     VkSemaphore render_semaphore;
 };
-
-#define FRAME_OVERLAP (u32)2
 
 int main(int argc, char *argv[])
 {
@@ -148,19 +131,19 @@ int main(int argc, char *argv[])
     VkQueue graphics_queue = {};
     u32 graphics_queue_family = 0;
 
-    frame_data_t frame_data[FRAME_OVERLAP];
-
     graphics_queue = vkb_device.get_queue(vkb::QueueType::graphics).value();
     graphics_queue_family = vkb_device.get_queue_index(vkb::QueueType::graphics).value();
 
-    // Create the command pool and buffer.
-    VkCommandPoolCreateInfo command_pool_create_info = {};
-    command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    command_pool_create_info.queueFamilyIndex = graphics_queue_family;
+    frame_data_t frame_data[FRAME_OVERLAP];
 
     for (i32 i = 0; i < FRAME_OVERLAP; i++)
     {
+        // Create the command pool and buffer.
+        VkCommandPoolCreateInfo command_pool_create_info = {};
+        command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        command_pool_create_info.queueFamilyIndex = graphics_queue_family;
+
         VK_CHECK(vkCreateCommandPool(device, &command_pool_create_info, NULL, &frame_data[i].command_pool));
 
         // Now that command pool is created, allocate command buffers from it.
@@ -216,8 +199,8 @@ int main(int argc, char *argv[])
 
             // Request the swapchain for a image.
             u32 swapchain_image_index = 0;
-            VK_CHECK(vkAcquireNextImageKHR(device, swapchain, 1e9, current_frame_data->swapchain_semaphore, NULL,
-                                           &swapchain_image_index));
+            VK_CHECK(vkAcquireNextImageKHR(device, swapchain, SECONDS_IN_NS(1), current_frame_data->swapchain_semaphore,
+                                           NULL, &swapchain_image_index));
 
             VkCommandBuffer cmd = current_frame_data->command_buffer;
 
@@ -241,9 +224,9 @@ int main(int argc, char *argv[])
             {
                 VkImageMemoryBarrier2 image_memory_barrier = {};
                 image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-                image_memory_barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                image_memory_barrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
                 image_memory_barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
-                image_memory_barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                image_memory_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
                 image_memory_barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
                 image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
                 image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -270,9 +253,9 @@ int main(int argc, char *argv[])
             {
                 VkImageMemoryBarrier2 image_memory_barrier = {};
                 image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-                image_memory_barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                image_memory_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
                 image_memory_barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
-                image_memory_barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                image_memory_barrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
                 image_memory_barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
                 image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
                 image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;

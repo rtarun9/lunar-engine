@@ -1,5 +1,6 @@
 #include "common.h"
 
+#include <stdio.h>
 #include <vector>
 
 // Use this #define so SDL_main doesn't need to be used.
@@ -34,6 +35,67 @@ struct frame_data_t
 
 int main(int argc, char *argv[])
 {
+    {
+
+        // Test for dynamic array.
+        dynamic_array_t dyn_array_1 = create_dynamic_array(10, sizeof(i32));
+        i32 x = 1;
+        push_to_dynamic_array(&dyn_array_1, &x);
+        x = 2;
+        push_to_dynamic_array(&dyn_array_1, &x);
+        x = 3;
+        push_to_dynamic_array(&dyn_array_1, &x);
+        x = 10;
+        push_to_dynamic_array(&dyn_array_1, &x);
+
+        for (u32 i = 0; i < 4; i++)
+        {
+            i32 *value = (i32 *)get_from_dynamic_array(&dyn_array_1, i);
+            ASSERT(value);
+            printf("%d -> %d\n", i, *value);
+        }
+    }
+
+    {
+        struct Test
+        {
+            i32 a;
+            f32 b;
+            u64 c;
+        };
+        // Test for dynamic array.
+        dynamic_array_t dyn_array_1 = create_dynamic_array(3, sizeof(Test));
+
+        Test test = {};
+        test.a = 3;
+        test.b = 5.0f;
+        test.c = 0xffff;
+        push_to_dynamic_array(&dyn_array_1, &test);
+
+        test.a = 30;
+        test.b = 50.0f;
+        test.c = 0xfffffff;
+        push_to_dynamic_array(&dyn_array_1, &test);
+
+        test.a = 80;
+        test.b = 50.0f;
+        test.c = 0xab;
+
+        push_to_dynamic_array(&dyn_array_1, &test);
+
+        test.a = 80;
+        test.b = 50.0f;
+        test.c = 0xadfb;
+
+        push_to_dynamic_array(&dyn_array_1, &test);
+
+        for (u32 i = 0; i < dyn_array_1.len; i++)
+        {
+            Test *value = (Test *)get_from_dynamic_array(&dyn_array_1, i);
+            ASSERT(value);
+            printf("%d -> %d %f %u\n", i, (value->a), (value->b), (value->c));
+        }
+    }
     // Reference for vulkan initialization.
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
     {

@@ -18,7 +18,7 @@ typedef float f32;
 typedef double f64;
 
 #define ASSERT(x)                                                                                                      \
-    if (!x)                                                                                                            \
+    if (!(x))                                                                                                          \
     {                                                                                                                  \
         int *ptr = NULL;                                                                                               \
         *ptr = 0;                                                                                                      \

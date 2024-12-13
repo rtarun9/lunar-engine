@@ -9,17 +9,18 @@ struct dynamic_array_t
 
     u32 len;
     u32 capacity;
-
     u32 size_per_element;
 };
 
-internal dynamic_array_t create_dynamic_array(u32 size_per_element, u32 capacity)
+internal dynamic_array_t create_dynamic_array(u32 capacity, u32 size_per_element)
 {
     dynamic_array_t result = {};
 
-    result.capacity = capacity;
     result.len = 0;
+    result.capacity = capacity;
+    result.size_per_element = size_per_element;
 
+    // TODO: Custom memory allocator.
     result.data = (void *)malloc(size_per_element * capacity);
     ASSERT(result.data);
 
@@ -53,8 +54,10 @@ internal void push_to_dynamic_array(dynamic_array_t *dynamic_array, void *elemen
         ASSERT(dynamic_array->data);
     }
 
-    memset((u8 *)dynamic_array->data + dynamic_array->len++ * dynamic_array->size_per_element, element,
-           dynamic_array->size_per_element);
+    u8 *destination = (u8 *)dynamic_array->data + dynamic_array->len++ * dynamic_array->size_per_element;
+    u8 *source = (u8 *)element;
+
+    memcpy(destination, source, dynamic_array->size_per_element);
 }
 
 internal void *get_from_dynamic_array(dynamic_array_t *dynamic_array, u32 index)
@@ -64,7 +67,7 @@ internal void *get_from_dynamic_array(dynamic_array_t *dynamic_array, u32 index)
 
     ASSERT(index < dynamic_array->len);
 
-    void *element = ((u8 *)dynamic_array->data + index);
+    void *element = ((u8 *)dynamic_array->data + index * dynamic_array->size_per_element);
     ASSERT(element);
 
     return element;

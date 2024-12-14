@@ -1,4 +1,5 @@
 #include "common.h"
+#include "dynamic_array.h"
 
 #include <stdio.h>
 #include <vector>
@@ -9,9 +10,10 @@
 #include <SDL2/SDL_Vulkan.h>
 #include <vulkan/vulkan.h>
 
-#include <VkBootstrap.h>
+#define VMA_IMPLEMENTATION
+#include "vk_mem_alloc.h"
 
-#include "dynamic_array.h"
+#include <VkBootstrap.h>
 
 #define VK_CHECK(x) ASSERT((VkResult)x == VK_SUCCESS)
 
@@ -33,69 +35,17 @@ struct frame_data_t
     VkSemaphore render_semaphore;
 };
 
+struct allocated_image_t
+{
+    VkImage image;
+    VkImageView image_view;
+    VmaAllocation allocation;
+    VkExtent3D extent;
+    VkFormat format;
+};
+
 int main(int argc, char *argv[])
 {
-    {
-
-        // Test for dynamic array.
-        dynamic_array_t dyn_array_1 = create_dynamic_array(10, sizeof(i32));
-        i32 x = 1;
-        push_to_dynamic_array(&dyn_array_1, &x);
-        x = 2;
-        push_to_dynamic_array(&dyn_array_1, &x);
-        x = 3;
-        push_to_dynamic_array(&dyn_array_1, &x);
-        x = 10;
-        push_to_dynamic_array(&dyn_array_1, &x);
-
-        for (u32 i = 0; i < 4; i++)
-        {
-            i32 *value = (i32 *)get_from_dynamic_array(&dyn_array_1, i);
-            ASSERT(value);
-            printf("%d -> %d\n", i, *value);
-        }
-    }
-
-    {
-        struct Test
-        {
-            i32 a;
-            f32 b;
-            u64 c;
-        };
-        // Test for dynamic array.
-        dynamic_array_t dyn_array_1 = create_dynamic_array(3, sizeof(Test));
-
-        Test test = {};
-        test.a = 3;
-        test.b = 5.0f;
-        test.c = 0xffff;
-        push_to_dynamic_array(&dyn_array_1, &test);
-
-        test.a = 30;
-        test.b = 50.0f;
-        test.c = 0xfffffff;
-        push_to_dynamic_array(&dyn_array_1, &test);
-
-        test.a = 80;
-        test.b = 50.0f;
-        test.c = 0xab;
-
-        push_to_dynamic_array(&dyn_array_1, &test);
-
-        test.a = 80;
-        test.b = 50.0f;
-        test.c = 0xadfb;
-
-        push_to_dynamic_array(&dyn_array_1, &test);
-
-        for (u32 i = 0; i < dyn_array_1.len; i++)
-        {
-            Test *value = (Test *)get_from_dynamic_array(&dyn_array_1, i);
-            ASSERT(value);
-            printf("%d -> %d %f %u\n", i, (value->a), (value->b), (value->c));
-        }
-    }
     // Reference for vulkan initialization.
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
     {
@@ -231,6 +181,67 @@ int main(int argc, char *argv[])
         VK_CHECK(vkCreateSemaphore(device, &semaphore_create_info, NULL, &frame_data[i].render_semaphore));
         VK_CHECK(vkCreateSemaphore(device, &semaphore_create_info, NULL, &frame_data[i].swapchain_semaphore));
     }
+
+    // Initialize vma.
+    VmaAllocator vma_allocator = {};
+
+    VmaAllocatorCreateInfo vma_allocator_create_info = {};
+    vma_allocator_create_info.physicalDevice = physical_device;
+    vma_allocator_create_info.device = device;
+    vma_allocator_create_info.instance = instance;
+    vma_allocator_create_info.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+
+    VK_CHECK(vmaCreateAllocator(&vma_allocator_create_info, &vma_allocator));
+
+    allocated_image_t draw_image = {};
+
+    draw_image.format = VkFormat::VK_FORMAT_R16G16B16A16_SFLOAT;
+
+    VkImageCreateInfo draw_image_create_info = {};
+    draw_image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    draw_image_create_info.flags = 0;
+    draw_image_create_info.imageType = VkImageType::VK_IMAGE_TYPE_2D;
+    draw_image_create_info.format = draw_image.format;
+
+    VkExtent3D draw_image_extent = {};
+    draw_image_extent.width = swapchain_extent.width;
+    draw_image_extent.height = swapchain_extent.height;
+    draw_image_extent.depth = 1;
+
+    draw_image_create_info.extent = draw_image_extent;
+    draw_image_create_info.mipLevels = 1;
+    draw_image_create_info.arrayLayers = 1;
+    draw_image_create_info.samples = VkSampleCountFlagBits::VK_SAMPLE_COUNT_1_BIT;
+    draw_image_create_info.tiling = VkImageTiling::VK_IMAGE_TILING_OPTIMAL;
+    draw_image_create_info.usage = VkImageUsageFlagBits::VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                   VkImageUsageFlagBits::VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                   VkImageUsageFlagBits::VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                   VkImageUsageFlagBits::VK_IMAGE_USAGE_STORAGE_BIT;
+    draw_image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    draw_image_create_info.queueFamilyIndexCount = 1;
+    draw_image_create_info.pQueueFamilyIndices = &graphics_queue_family;
+    draw_image_create_info.initialLayout = VkImageLayout::VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VmaAllocationCreateInfo draw_image_vma_allocation_create_info = {};
+    draw_image_vma_allocation_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    draw_image_vma_allocation_create_info.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+    VK_CHECK(vmaCreateImage(vma_allocator, &draw_image_create_info, &draw_image_vma_allocation_create_info,
+                            &draw_image.image, &draw_image.allocation, NULL));
+
+    // Create the draw image view.
+    VkImageViewCreateInfo draw_image_view_create_info = {};
+    draw_image_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    draw_image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    draw_image_view_create_info.image = draw_image.image;
+    draw_image_view_create_info.format = draw_image.format;
+    draw_image_view_create_info.subresourceRange.baseMipLevel = 0;
+    draw_image_view_create_info.subresourceRange.levelCount = 1;
+    draw_image_view_create_info.subresourceRange.baseArrayLayer = 0;
+    draw_image_view_create_info.subresourceRange.layerCount = 1;
+    draw_image_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+    VK_CHECK(vkCreateImageView(device, &draw_image_view_create_info, NULL, &draw_image.image_view));
 
     i64 frame_number = 0;
 
@@ -386,6 +397,11 @@ int main(int argc, char *argv[])
 
     // Wait for all gpu operations to be completed.
     vkDeviceWaitIdle(device);
+
+    vkDestroyImageView(device, draw_image.image_view, NULL);
+    vmaDestroyImage(vma_allocator, draw_image.image, draw_image.allocation);
+
+    vmaDestroyAllocator(vma_allocator);
 
     for (i32 i = 0; i < FRAME_OVERLAP; i++)
     {

@@ -327,6 +327,82 @@ int main(int argc, char *argv[])
 
     VK_CHECK(vkCreateImageView(device, &draw_image_view_create_info, NULL, &draw_image.image_view));
 
+    // Create description set layout with a single RW texture 2d.
+    VkDescriptorSetLayoutBinding descriptor_set_layout_binding = {};
+    descriptor_set_layout_binding.binding = 0;
+    descriptor_set_layout_binding.descriptorCount = 1;
+    descriptor_set_layout_binding.descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    descriptor_set_layout_binding.stageFlags = VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {};
+    descriptor_set_layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    descriptor_set_layout_create_info.flags = 0;
+    descriptor_set_layout_create_info.bindingCount = 1;
+    descriptor_set_layout_create_info.pBindings = &descriptor_set_layout_binding;
+
+    VkDescriptorSetLayout descriptor_set_layout = {};
+    VK_CHECK(vkCreateDescriptorSetLayout(device, &descriptor_set_layout_create_info, NULL, &descriptor_set_layout));
+
+    // Create descriptor pool that will be used to allocate descriptor sets.
+    VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
+    descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    descriptor_pool_create_info.maxSets = 1;
+    descriptor_pool_create_info.poolSizeCount = 1;
+
+    VkDescriptorPoolSize storage_buffer_descriptor_pool_size = {};
+    storage_buffer_descriptor_pool_size.type = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    storage_buffer_descriptor_pool_size.descriptorCount = 10;
+
+    descriptor_pool_create_info.pPoolSizes = &storage_buffer_descriptor_pool_size;
+
+    VkDescriptorPool descriptor_pool = {};
+    VK_CHECK(vkCreateDescriptorPool(device, &descriptor_pool_create_info, NULL, &descriptor_pool));
+
+    // Allocate a descriptor from the pool.
+    VkDescriptorSet descriptor_set = {};
+
+    VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {};
+    descriptor_set_allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    descriptor_set_allocate_info.descriptorPool = descriptor_pool;
+    descriptor_set_allocate_info.descriptorSetCount = 1;
+    descriptor_set_allocate_info.pSetLayouts = &descriptor_set_layout;
+
+    VK_CHECK(vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, &descriptor_set));
+
+    // Update the descriptor so that it points to the draw image.
+    VkWriteDescriptorSet draw_image_descriptor_write = {};
+    draw_image_descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    draw_image_descriptor_write.dstSet = descriptor_set;
+    draw_image_descriptor_write.dstBinding = 0;
+    draw_image_descriptor_write.descriptorCount = 1;
+    draw_image_descriptor_write.descriptorType = VkDescriptorType::VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+
+    VkDescriptorImageInfo descriptor_image_info = {};
+    descriptor_image_info.imageView = draw_image.image_view;
+    descriptor_image_info.imageLayout = VkImageLayout::VK_IMAGE_LAYOUT_GENERAL;
+
+    draw_image_descriptor_write.pImageInfo = &descriptor_image_info;
+
+    vkUpdateDescriptorSets(device, 1, &draw_image_descriptor_write, 0, NULL);
+
+    // Create the shader module for gradient compute shader.
+    SDL_RWops *comp_shader_spirv_rw_ops = SDL_RWFromFile("shaders/gradient.comp.spv", "br");
+    ASSERT(comp_shader_spirv_rw_ops);
+
+    u64 size = comp_shader_spirv_rw_ops->size(comp_shader_spirv_rw_ops);
+    printf("size is : %d", size);
+
+    dynamic_array_t comp_shader_data = create_dynamic_array(1, size);
+    comp_shader_spirv_rw_ops->read(comp_shader_spirv_rw_ops, comp_shader_data.data, size, size);
+
+    VkShaderModuleCreateInfo compute_shader_module_create_info = {};
+    compute_shader_module_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    compute_shader_module_create_info.codeSize = size;
+    compute_shader_module_create_info.pCode = (u32 *)comp_shader_data.data;
+
+    VkShaderModule compute_shader_module = {};
+    VK_CHECK(vkCreateShaderModule(device, &compute_shader_module_create_info, NULL, &compute_shader_module));
+
     i64 frame_number = 0;
 
     bool quit = false;

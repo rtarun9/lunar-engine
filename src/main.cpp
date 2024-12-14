@@ -44,6 +44,90 @@ struct allocated_image_t
     VkFormat format;
 };
 
+void transition_image(VkCommandBuffer cmd, VkImage image, VkPipelineStageFlags2 src_pipeline_stage_flag,
+                      VkPipelineStageFlags2 dst_pipeline_stage_flag, VkImageLayout old_layout, VkImageLayout new_layout)
+{
+    VkImageSubresourceRange subresource_range = {};
+    subresource_range.aspectMask = VkImageAspectFlagBits::VK_IMAGE_ASPECT_COLOR_BIT;
+    subresource_range.baseMipLevel = 0;
+    subresource_range.levelCount = VK_REMAINING_MIP_LEVELS;
+    subresource_range.baseArrayLayer = 0;
+    subresource_range.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+    VkImageMemoryBarrier2 image_memory_barrier = {};
+    image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+    image_memory_barrier.srcStageMask = src_pipeline_stage_flag;
+    image_memory_barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+    image_memory_barrier.dstStageMask = dst_pipeline_stage_flag;
+    image_memory_barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    image_memory_barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
+    image_memory_barrier.oldLayout = old_layout;
+    image_memory_barrier.newLayout = new_layout;
+
+    image_memory_barrier.image = image;
+
+    image_memory_barrier.subresourceRange = subresource_range;
+
+    VkDependencyInfo dependency_info = {};
+    dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dependency_info.imageMemoryBarrierCount = 1;
+    dependency_info.pImageMemoryBarriers = &image_memory_barrier;
+
+    vkCmdPipelineBarrier2(cmd, &dependency_info);
+}
+void blit_image(VkCommandBuffer cmd, VkImage source, VkExtent2D source_extent, VkImage dest, VkExtent2D dest_extent)
+{
+    VkImageBlit2 image_blit = {};
+    image_blit.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
+
+    image_blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    image_blit.srcSubresource.mipLevel = 0;
+    image_blit.srcSubresource.baseArrayLayer = 0;
+    image_blit.srcSubresource.layerCount = 1;
+
+    image_blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    image_blit.dstSubresource.mipLevel = 0;
+    image_blit.dstSubresource.baseArrayLayer = 0;
+    image_blit.dstSubresource.layerCount = 1;
+
+    image_blit.srcOffsets[0].x = 0;
+    image_blit.srcOffsets[0].y = 0;
+    image_blit.srcOffsets[0].z = 0;
+
+    image_blit.srcOffsets[1].x = source_extent.width;
+    image_blit.srcOffsets[1].y = source_extent.height;
+    image_blit.srcOffsets[1].z = 1;
+
+    image_blit.dstOffsets[0].x = 0;
+    image_blit.dstOffsets[0].y = 0;
+    image_blit.dstOffsets[0].z = 0;
+
+    image_blit.dstOffsets[1].x = dest_extent.width;
+    image_blit.dstOffsets[1].y = dest_extent.height;
+    image_blit.dstOffsets[1].z = 1;
+
+    VkImageSubresourceLayers default_subresource_layers = {};
+    default_subresource_layers.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    default_subresource_layers.mipLevel = 0;
+    default_subresource_layers.baseArrayLayer = 0;
+    default_subresource_layers.layerCount = 1;
+
+    image_blit.srcSubresource = default_subresource_layers;
+    image_blit.dstSubresource = default_subresource_layers;
+
+    VkBlitImageInfo2 blit_image_info = {};
+    blit_image_info.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2;
+    blit_image_info.srcImage = source;
+    blit_image_info.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    blit_image_info.dstImage = dest;
+    blit_image_info.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    blit_image_info.filter = VK_FILTER_LINEAR;
+    blit_image_info.regionCount = 1;
+    blit_image_info.pRegions = &image_blit;
+
+    vkCmdBlitImage2(cmd, &blit_image_info);
+}
+
 int main(int argc, char *argv[])
 {
     // Reference for vulkan initialization.
@@ -293,57 +377,37 @@ int main(int argc, char *argv[])
             subresource_range.baseArrayLayer = 0;
             subresource_range.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
-            // Transition the swapchain image into a layout where we can draw into it.
-            {
-                VkImageMemoryBarrier2 image_memory_barrier = {};
-                image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-                image_memory_barrier.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-                image_memory_barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
-                image_memory_barrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-                image_memory_barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
-                image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-                image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-                image_memory_barrier.image = swapchain_images[swapchain_image_index];
-
-                image_memory_barrier.subresourceRange = subresource_range;
-
-                VkDependencyInfo dependency_info = {};
-                dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-                dependency_info.imageMemoryBarrierCount = 1;
-                dependency_info.pImageMemoryBarriers = &image_memory_barrier;
-
-                vkCmdPipelineBarrier2(cmd, &dependency_info);
-            }
+            // Transition draw image so that it can be cleared into.
+            transition_image(cmd, draw_image.image, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                             VK_IMAGE_LAYOUT_GENERAL);
 
             VkClearColorValue clear_color = {};
             clear_color.float32[2] = sinf(frame_number / 120.0f);
 
-            vkCmdClearColorImage(cmd, swapchain_images[swapchain_image_index], VK_IMAGE_LAYOUT_GENERAL, &clear_color, 1,
-                                 &subresource_range);
+            vkCmdClearColorImage(cmd, draw_image.image, VK_IMAGE_LAYOUT_GENERAL, &clear_color, 1, &subresource_range);
 
-            // Transition the swapchain image back to a format that can be presented.
-            {
-                VkImageMemoryBarrier2 image_memory_barrier = {};
-                image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-                image_memory_barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-                image_memory_barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
-                image_memory_barrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-                image_memory_barrier.dstAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
-                image_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-                image_memory_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            transition_image(cmd, draw_image.image, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                             VK_PIPELINE_STAGE_2_BLIT_BIT, VK_IMAGE_LAYOUT_GENERAL,
+                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
-                image_memory_barrier.image = swapchain_images[swapchain_image_index];
+            transition_image(cmd, swapchain_images[swapchain_image_index],
+                             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_BLIT_BIT,
+                             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
-                image_memory_barrier.subresourceRange = subresource_range;
+            VkExtent2D src_extent = {};
+            src_extent.width = draw_image.extent.width;
+            src_extent.height = draw_image.extent.height;
 
-                VkDependencyInfo dependency_info = {};
-                dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-                dependency_info.imageMemoryBarrierCount = 1;
-                dependency_info.pImageMemoryBarriers = &image_memory_barrier;
+            VkExtent2D dst_extent = {};
+            dst_extent.width = swapchain_extent.width;
+            dst_extent.height = swapchain_extent.height;
 
-                vkCmdPipelineBarrier2(cmd, &dependency_info);
-            }
+            blit_image(cmd, draw_image.image, src_extent, swapchain_images[swapchain_image_index], dst_extent);
+
+            transition_image(cmd, swapchain_images[swapchain_image_index], VK_PIPELINE_STAGE_2_BLIT_BIT,
+                             VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                             VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
             VK_CHECK(vkEndCommandBuffer(cmd));
 

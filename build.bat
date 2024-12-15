@@ -1,7 +1,7 @@
 :: This file is just to make the build / run process easier.
 
 :: Shader compilation.
-glslangValidator -e cs_main -o shaders/gradient.comp.spv -V -D shaders/gradient.comp
+dxc -HV 2021 -T cs_6_0 -E cs_main -spirv -fspv-target-env="vulkan1.3" shaders\gradient.comp.hlsl -Fo shaders/gradient.comp.spv
 
 
 :: NOTE: Uncomment the below line if this is the first time the build.bat script is being run.

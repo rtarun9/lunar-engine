@@ -1,4 +1,4 @@
-RWTexture2D<float4> texture : register(b0);
+RWTexture2D<float4> texture : register(u0);
 
 [numthreads(16,16,1)]
 void cs_main(uint3 index :SV_DispatchThreadID, uint3 group_thread_id : SV_GroupThreadID)

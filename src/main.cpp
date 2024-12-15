@@ -386,19 +386,20 @@ int main(int argc, char *argv[])
     vkUpdateDescriptorSets(device, 1, &draw_image_descriptor_write, 0, NULL);
 
     // Create the shader module for gradient compute shader.
-    SDL_RWops *comp_shader_spirv_rw_ops = SDL_RWFromFile("shaders/gradient.comp.spv", "br");
+    SDL_RWops *comp_shader_spirv_rw_ops = SDL_RWFromFile("shaders/gradient.comp.spv", "rb");
     ASSERT(comp_shader_spirv_rw_ops);
 
-    u64 size = comp_shader_spirv_rw_ops->size(comp_shader_spirv_rw_ops);
-    printf("size is : %d", size);
+    u64 size = SDL_RWsize(comp_shader_spirv_rw_ops);
 
-    dynamic_array_t comp_shader_data = create_dynamic_array(1, size);
-    comp_shader_spirv_rw_ops->read(comp_shader_spirv_rw_ops, comp_shader_data.data, size, size);
+    dynamic_array_t comp_shader_data = create_dynamic_array(size / sizeof(u8), sizeof(u8));
+    SDL_RWread(comp_shader_spirv_rw_ops, comp_shader_data.data, size, 1);
+    SDL_RWclose(comp_shader_spirv_rw_ops);
 
     VkShaderModuleCreateInfo compute_shader_module_create_info = {};
     compute_shader_module_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     compute_shader_module_create_info.codeSize = size;
     compute_shader_module_create_info.pCode = (u32 *)comp_shader_data.data;
+    u32 magic_num = compute_shader_module_create_info.pCode[0];
 
     VkShaderModule compute_shader_module = {};
     VK_CHECK(vkCreateShaderModule(device, &compute_shader_module_create_info, NULL, &compute_shader_module));
@@ -537,6 +538,10 @@ int main(int argc, char *argv[])
 
     // Wait for all gpu operations to be completed.
     vkDeviceWaitIdle(device);
+
+    vkDestroyShaderModule(device, compute_shader_module, NULL);
+    vkDestroyDescriptorPool(device, descriptor_pool, NULL);
+    vkDestroyDescriptorSetLayout(device, descriptor_set_layout, NULL);
 
     vkDestroyImageView(device, draw_image.image_view, NULL);
     vmaDestroyImage(vma_allocator, draw_image.image, draw_image.allocation);

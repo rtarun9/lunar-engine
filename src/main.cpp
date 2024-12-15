@@ -287,12 +287,12 @@ int main(int argc, char *argv[])
     draw_image_create_info.imageType = VkImageType::VK_IMAGE_TYPE_2D;
     draw_image_create_info.format = draw_image.format;
 
-    VkExtent3D draw_image_extent = {};
-    draw_image_extent.width = swapchain_extent.width;
-    draw_image_extent.height = swapchain_extent.height;
-    draw_image_extent.depth = 1;
+    draw_image.extent = {};
+    draw_image.extent.width = swapchain_extent.width;
+    draw_image.extent.height = swapchain_extent.height;
+    draw_image.extent.depth = 1;
 
-    draw_image_create_info.extent = draw_image_extent;
+    draw_image_create_info.extent = draw_image.extent;
     draw_image_create_info.mipLevels = 1;
     draw_image_create_info.arrayLayers = 1;
     draw_image_create_info.samples = VkSampleCountFlagBits::VK_SAMPLE_COUNT_1_BIT;
@@ -404,6 +404,30 @@ int main(int argc, char *argv[])
     VkShaderModule compute_shader_module = {};
     VK_CHECK(vkCreateShaderModule(device, &compute_shader_module_create_info, NULL, &compute_shader_module));
 
+    // Create pipeline layout with the shader bindings.
+    VkPipelineLayoutCreateInfo pipeline_layout_create_info = {};
+    pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipeline_layout_create_info.setLayoutCount = 1;
+    pipeline_layout_create_info.pSetLayouts = &descriptor_set_layout;
+
+    VkPipelineLayout pipeline_layout = {};
+    VK_CHECK(vkCreatePipelineLayout(device, &pipeline_layout_create_info, NULL, &pipeline_layout));
+
+    // Create the compute pipeline.
+    VkPipelineShaderStageCreateInfo shader_stage_create_info = {};
+    shader_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shader_stage_create_info.stage = VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT;
+    shader_stage_create_info.module = compute_shader_module;
+    shader_stage_create_info.pName = "cs_main";
+
+    VkComputePipelineCreateInfo compute_pipeline_create_info = {};
+    compute_pipeline_create_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    compute_pipeline_create_info.stage = shader_stage_create_info;
+    compute_pipeline_create_info.layout = pipeline_layout;
+
+    VkPipeline compute_pipeline = {};
+    VK_CHECK(vkCreateComputePipelines(device, NULL, 1, &compute_pipeline_create_info, NULL, &compute_pipeline));
+
     i64 frame_number = 0;
 
     bool quit = false;
@@ -454,15 +478,14 @@ int main(int argc, char *argv[])
             subresource_range.baseArrayLayer = 0;
             subresource_range.layerCount = VK_REMAINING_ARRAY_LAYERS;
 
-            // Transition draw image so that it can be cleared into.
             transition_image(cmd, draw_image.image, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
                              VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
                              VK_IMAGE_LAYOUT_GENERAL);
 
-            VkClearColorValue clear_color = {};
-            clear_color.float32[2] = sinf(frame_number / 120.0f);
-
-            vkCmdClearColorImage(cmd, draw_image.image, VK_IMAGE_LAYOUT_GENERAL, &clear_color, 1, &subresource_range);
+            vkCmdBindPipeline(cmd, VkPipelineBindPoint::VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline);
+            vkCmdBindDescriptorSets(cmd, VkPipelineBindPoint::VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0u, 1u,
+                                    &descriptor_set, 0u, NULL);
+            vkCmdDispatch(cmd, ceil(draw_image.extent.width / 16.0f), ceil(draw_image.extent.height / 16.0f), 1u);
 
             transition_image(cmd, draw_image.image, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                              VK_PIPELINE_STAGE_2_BLIT_BIT, VK_IMAGE_LAYOUT_GENERAL,
@@ -538,6 +561,9 @@ int main(int argc, char *argv[])
 
     // Wait for all gpu operations to be completed.
     vkDeviceWaitIdle(device);
+
+    vkDestroyPipelineLayout(device, pipeline_layout, NULL);
+    vkDestroyPipeline(device, compute_pipeline, NULL);
 
     vkDestroyShaderModule(device, compute_shader_module, NULL);
     vkDestroyDescriptorPool(device, descriptor_pool, NULL);
